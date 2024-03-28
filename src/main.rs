@@ -73,7 +73,7 @@ fn main() {
         let (width, height) = display.get_framebuffer_dimensions();
         let mut point_positions: Vec<Vertex> = vec![];
 
-        for star in &sim.stars {
+        for star in sim.get_stars() {
             let (screen_x, screen_y) = sim::point2d_to_screen_coords((star.x, star.y), (width, height), &sim.sim_domain).unwrap_or_else(|| (2.0, 2.0));
             let this_point = Vertex {position: [screen_x as f32, screen_y as f32]};
             point_positions.push(this_point);
