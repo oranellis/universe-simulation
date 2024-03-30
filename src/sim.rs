@@ -110,11 +110,8 @@ pub fn point2d_to_screen_coords(pos: (f64, f64), screen_size: (u32, u32), sim_do
 /// Structure representing a 2D simulation
 pub struct Simulation2D {
     pub sim_domain: SimulationDomain2D,
-    stars1: Vec<Star2D>,
-    stars2: Vec<Star2D>,
-    stars3: Vec<Star2D>,
+    stars: Vec<Star2D>,
     pub time: f64,
-    stars_array_in_use: u8,
 }
 
 impl Simulation2D {
@@ -128,69 +125,39 @@ impl Simulation2D {
             target_screen_width: 1000, // Pixels
         };
         let mut stars: Vec<Star2D> = vec![];
-        stars.push(Star2D { x: 0.0, y: 0.0, x_vel: 0.0, y_vel: 0.0, mass: 1e31, luminosity: 0.0, temperature: 0 });
         for _ in 1..STAR_COUNT {
             stars.push(Star2D::new_random_star_2d(&sim_domain))
         }
         return Simulation2D {
             sim_domain,
-            stars1: stars,
-            stars2: vec![],
-            stars3: vec![],
-            stars_array_in_use: 0,
+            stars,
             time: 0.0,
         }
     }
+
+    /// Steps the simulation
     pub fn step(&mut self) {
-        let mut old_stars = &self.stars3;
-        let mut curr_stars = &self.stars1;
-        let mut next_stars = &mut self.stars2;
-        match self.stars_array_in_use {
-            1 => {
-                old_stars = &self.stars1;
-                curr_stars = &self.stars2;
-                next_stars = &mut self.stars3;
-            }
-            2 => {
-                old_stars = &self.stars2;
-                curr_stars = &self.stars3;
-                next_stars = &mut self.stars1;
-            }
-            _ => {
-                old_stars = &self.stars3;
-                curr_stars = &self.stars1;
-                next_stars = &mut self.stars2;
-            }
-        }
-        for (i, star) in curr_stars.iter().enumerate() {
+        let old_stars = self.stars.clone();
+        for star in &mut self.stars {
             let mut force_x: f64 = 0.0;
             let mut force_y: f64 = 0.0;
-            for curr_star in curr_stars {
-                if star.x == curr_star.x && star.y == curr_star.y {
+            for old_star in &old_stars {
+                if star.x == old_star.x && star.y == old_star.y {
                     continue;
                 }
-                let (force_x_part, force_y_part) = gravitational_force_components(star.mass, curr_star.mass, star.x, star.y, curr_star.x, curr_star.y);
+                let (force_x_part, force_y_part) = gravitational_force_components(star.mass, old_star.mass, star.x, star.y, old_star.x, old_star.y);
                 force_x += force_x_part;
                 force_y += force_y_part;
             }
-            next_stars[i].x = star.x + ((star.x_vel + force_x / star.mass) / 2.0) * TIMESTEP;
-            next_stars[i].x_vel += force_x / star.mass;
-            next_stars[i].y = star.y + ((star.y_vel + force_y / star.mass) / 2.0) * TIMESTEP;
-            next_stars[i].y_vel += force_y / star.mass;
+            star.x = star.x + ((star.x_vel + force_x / star.mass) / 2.0) * TIMESTEP;
+            star.x_vel += force_x / star.mass;
+            star.y = star.y + ((star.y_vel + force_y / star.mass) / 2.0) * TIMESTEP;
+            star.y_vel += force_y / star.mass;
         }
-        self.stars_array_in_use = (self.stars_array_in_use + 1) % 3;
     }
+
+    /// Returns a reference to the vector of stars
     pub fn get_stars(&self) -> &Vec<Star2D> {
-        match self.stars_array_in_use {
-            1 => {
-                &self.stars2
-            }
-            2 => {
-                &self.stars3
-            }
-            _ => {
-                &self.stars1
-            }
-        }
+        &self.stars
     }
 }

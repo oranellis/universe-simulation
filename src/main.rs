@@ -1,23 +1,26 @@
+/// This is the main library crate for a Universe Simulation.
+/// It makes use of the `glium` library for rendering.
+
 #[macro_use]
 extern crate glium;
-
 use std::time::{Duration, Instant};
-
 mod sim;
-
 use glium::{glutin::{self}, Surface};
 
+/// A structure for representing a vertex with a 2D position.
 #[derive(Copy, Clone)]
 struct Vertex {
     position: [f32; 2],
 }
 
+/// A structure for holding uniform values passed to the shader.
 #[derive(Copy, Clone)]
 struct Uniforms {
     screen_size: [f32; 2],
 }
 
 impl glium::uniforms::Uniforms for Uniforms {
+    /// Visits the uniform values, allowing them to be used in the shader.
     fn visit_values<'a, F: FnMut(&str, glium::uniforms::UniformValue<'a>)>(&'a self, mut f: F) {
         f("screen_size", glium::uniforms::UniformValue::Vec2(self.screen_size));
     }
@@ -26,7 +29,7 @@ impl glium::uniforms::Uniforms for Uniforms {
 // This macro implements the glium::Vertex trait for the Vertex struct.
 implement_vertex!(Vertex, position);
 
-
+/// The main function sets up the rendering window, runs the simulation loop, and handles events.
 fn main() {
     let target_frame_time = Duration::from_secs_f64(1.0 / 60.0); // 60 FPS
     let event_loop = glutin::event_loop::EventLoop::new();
