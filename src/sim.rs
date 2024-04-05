@@ -1,9 +1,14 @@
+use std::vec;
 use rand::prelude::*;
 use rand_distr::{Normal, Distribution};
+use nalgebra::{Vector2, vector};
 
-pub const STAR_COUNT: u32 = 300;
-pub const TIMESTEP: f64 = 1e13; // In seconds
+pub const STAR_COUNT: u64 = 10;
+pub const TIMESTEP: f64 = 1e12; // In seconds
+pub const FRAMESKIPS: u32 = 1; // The number of timesteps to perform per frame
 pub const G: f64 = 6.674e-11; // In seconds
+
+type SimVector = Vector2<f64>;
 
 /// Contains information about the simulation domain
 ///
@@ -12,7 +17,6 @@ pub const G: f64 = 6.674e-11; // In seconds
 pub struct SimulationDomain2D {
     width: f64,
     height: f64,
-    grid_spacing: f64,
     target_screen_width: u32,
     target_screen_height: u32,
 }
@@ -20,23 +24,13 @@ pub struct SimulationDomain2D {
 /// Represents a celestial object
 #[derive(Clone)]
 pub struct Star2D {
-    /// The x position in meters
-    pub x: f64,
-    /// The y position in meters
-    pub y: f64,
-    /// The x velocities in meters per second
-    pub x_vel: f64,
-    /// The y velocities in meters per second
-    pub y_vel: f64,
-    /// The mass of the star in 1e27 kg
-    pub x_old: f64,
-    /// The y position in meters
-    pub y_old: f64,
-    /// The x velocities in meters per second
-    pub x_vel_old: f64,
-    /// The y velocities in meters per second
-    pub y_vel_old: f64,
-    /// The mass of the star in 1e27 kg
+    /// The unique id of the star
+    pub id: u64,
+    /// The position in meters
+    pub position: SimVector,
+    /// The velocity in meters per second
+    pub velocity: SimVector,
+    /// The mass in kg
     pub mass: f64,
     /// The brightness of the star, expressed relative to the sun's luminosity. 0 for
     /// a black hole
@@ -46,21 +40,18 @@ pub struct Star2D {
 }
 
 impl Star2D {
-    pub fn new_random_star_2d(sim_domain: &SimulationDomain2D) -> Self {
+    pub fn new_random_star_2d(sim_domain: &SimulationDomain2D, id: u64) -> Self {
         let normal = Normal::new(8e29, 5e28).unwrap();
         let normalx = Normal::new(0.0, sim_domain.width / 8.0).unwrap();
         let normaly = Normal::new(0.0, sim_domain.height / 8.0).unwrap();
+        let x = normalx.sample(&mut rand::thread_rng()).clamp(-sim_domain.width/2.0, sim_domain.width/2.0);
+        let y = normaly.sample(&mut rand::thread_rng()).clamp(-sim_domain.height/2.0, sim_domain.height/2.0);
+        let x_vel = (rand::thread_rng().gen::<f64>() - 0.5) * 0.0;
+        let y_vel = (rand::thread_rng().gen::<f64>() - 0.5) * 0.0;
         Star2D {
-            // x: ((rand::thread_rng().gen::<f64>() - 0.5) * sim_domain.width),
-            // y: ((rand::thread_rng().gen::<f64>() - 0.5) * sim_domain.height),
-            x: normalx.sample(&mut rand::thread_rng()).clamp(-sim_domain.width/2.0, sim_domain.width/2.0),
-            y: normaly.sample(&mut rand::thread_rng()).clamp(-sim_domain.height/2.0, sim_domain.height/2.0),
-            x_vel: ((rand::thread_rng().gen::<f64>() - 0.5) * 2e5),
-            y_vel: ((rand::thread_rng().gen::<f64>() - 0.5) * 2e5),
-            x_old: 0.0,
-            y_old: 0.0,
-            x_vel_old: 0.0,
-            y_vel_old: 0.0,
+            id,
+            position: vector![x, y],
+            velocity: vector![x_vel, y_vel],
             mass: normal.sample(&mut rand::thread_rng()),
             luminosity: 1.0,
             temperature: 5000,
@@ -68,33 +59,32 @@ impl Star2D {
     }
 }
 
-fn gravitational_force_components(m1: f64, m2: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> (f64, f64) {
-    // Calculate the distance between the two points in 2D space
-    let dx = x2 - x1;
-    let dy = y2 - y1;
-    let r_squared = dx.powi(2) + dy.powi(2);
+// Generic function to calculate gravitational force components between two points
+// It supports both Vector2 and Vector3 from nalgebra
+fn gravitational_force_components(m1: f64, m2: f64, pos1: SimVector, pos2: SimVector) -> SimVector {
+    // Calculate the displacement vector between the two points
+    let displacement: SimVector = pos2 - pos1;
+    let r_squared = displacement.norm_squared();
     let r = r_squared.sqrt();
 
     // Calculate the magnitude of the gravitational force
     let f = G * (m1 * m2) / r_squared;
 
-    // Calculate the components of the gravitational force
-    let fx = f * dx / r;
-    let fy = f * dy / r;
+    // Normalize the displacement vector and scale it by the magnitude of the force
+    let force_vector = displacement.normalize() * f;
 
-    (fx, fy)
+    force_vector
 }
 
 /// Converts positions in simulation space to positions in screen space
 ///
 /// Screen coordinates go from -1 to 1 regardless of actual pixel dimensions so screen size is
 /// required for accurate scaling
-pub fn point2d_to_screen_coords(pos: (f64, f64), screen_size: (u32, u32), sim_domain: &SimulationDomain2D) -> Option<(f64, f64)> {
-    let (x, y) = pos;
+pub fn point2d_to_screen_coords(pos: SimVector, screen_size: (u32, u32), sim_domain: &SimulationDomain2D) -> Option<(f64, f64)> {
     let (screen_width, screen_height) = screen_size;
 
-    let x_norm = 2.0*x / sim_domain.width;
-    let y_norm = 2.0*y / sim_domain.height;
+    let x_norm = 2.0*pos.x / sim_domain.width;
+    let y_norm = 2.0*pos.y / sim_domain.height;
     let x_transform = f64::from(sim_domain.target_screen_width) / f64::from(screen_width);
     let y_transform = f64::from(sim_domain.target_screen_height) / f64::from(screen_height);
     let screen_x = x_norm * x_transform;
@@ -120,13 +110,12 @@ impl Simulation2D {
         let sim_domain = SimulationDomain2D {
             width: 1e14, // 50 times the milky way diameter galaxy across
             height: 1e14, // 50 times the milky way diameter galaxy high
-            grid_spacing: 1e20, // The width and height of grid cells for cell based optimisation
             target_screen_height: 1000, // Pixels
             target_screen_width: 1000, // Pixels
         };
         let mut stars: Vec<Star2D> = vec![];
-        for _ in 1..STAR_COUNT {
-            stars.push(Star2D::new_random_star_2d(&sim_domain))
+        for id in 1..STAR_COUNT {
+            stars.push(Star2D::new_random_star_2d(&sim_domain, id));
         }
         return Simulation2D {
             sim_domain,
@@ -136,23 +125,48 @@ impl Simulation2D {
     }
 
     /// Steps the simulation
-    pub fn step(&mut self) {
+    pub fn step_rk4(&mut self) {
         let old_stars = self.stars.clone();
+
         for star in &mut self.stars {
-            let mut force_x: f64 = 0.0;
-            let mut force_y: f64 = 0.0;
-            for old_star in &old_stars {
-                if star.x == old_star.x && star.y == old_star.y {
-                    continue;
-                }
-                let (force_x_part, force_y_part) = gravitational_force_components(star.mass, old_star.mass, star.x, star.y, old_star.x, old_star.y);
-                force_x += force_x_part;
-                force_y += force_y_part;
-            }
-            star.x = star.x + ((star.x_vel + force_x / star.mass) / 2.0) * TIMESTEP;
-            star.x_vel += force_x / star.mass;
-            star.y = star.y + ((star.y_vel + force_y / star.mass) / 2.0) * TIMESTEP;
-            star.y_vel += force_y / star.mass;
+            // Initial velocity and acceleration
+            let initial_velocity = star.velocity;
+            let initial_acceleration = total_gravitational_acceleration(star, &old_stars);
+
+            // k1: Initial velocity and acceleration
+            let k1_v = initial_velocity;
+            let k1_a = initial_acceleration;
+
+            // Creating an intermediate star for k2 using struct update syntax
+            let star_k2 = Star2D {
+                position: star.position + k1_v * (TIMESTEP * 0.5),
+                velocity: star.velocity + k1_a * (TIMESTEP * 0.5),
+                ..*star
+            };
+            let k2_v = star_k2.velocity;
+            let k2_a = total_gravitational_acceleration(&star_k2, &old_stars);
+
+            // Intermediate star for k3
+            let star_k3 = Star2D {
+                position: star.position + k2_v * (TIMESTEP * 0.5),
+                velocity: star.velocity + k2_a * (TIMESTEP * 0.5),
+                ..*star
+            };
+            let k3_v = star_k3.velocity;
+            let k3_a = total_gravitational_acceleration(&star_k3, &old_stars);
+
+            // Intermediate star for k4
+            let star_k4 = Star2D {
+                position: star.position + k3_v * TIMESTEP,
+                velocity: star.velocity + k3_a * TIMESTEP,
+                ..*star
+            };
+            let k4_v = star_k4.velocity;
+            let k4_a = total_gravitational_acceleration(&star_k4, &old_stars);
+
+            // Combining the results to compute the final position and velocity
+            star.position += (k1_v + 2.0*k2_v + 2.0*k3_v + k4_v) * (TIMESTEP / 6.0);
+            star.velocity += (k1_a + 2.0*k2_a + 2.0*k3_a + k4_a) * (TIMESTEP / 6.0);
         }
     }
 
@@ -160,4 +174,16 @@ impl Simulation2D {
     pub fn get_stars(&self) -> &Vec<Star2D> {
         &self.stars
     }
+}
+
+fn total_gravitational_acceleration(star: &Star2D, old_stars: &Vec<Star2D>) -> SimVector {
+    let mut force: SimVector = vector![0.0, 0.0];
+    for old_star in old_stars {
+        if star.id == old_star.id {
+            continue;
+        }
+        let force_part = gravitational_force_components(star.mass, old_star.mass, star.position, old_star.position);
+        force += force_part;
+    }
+    force / star.mass
 }

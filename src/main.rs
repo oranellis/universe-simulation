@@ -69,7 +69,9 @@ fn main() {
         let frame_start = Instant::now();
 
         frame_counter += 1;
-        sim.step();
+        for _ in 0..sim::FRAMESKIPS {
+            sim.step_rk4();
+        }
         let mut target = display.draw();
         target.clear_color(0.0, 0.0, 0.0, 1.0);
 
@@ -77,7 +79,7 @@ fn main() {
         let mut point_positions: Vec<Vertex> = vec![];
 
         for star in sim.get_stars() {
-            let (screen_x, screen_y) = sim::point2d_to_screen_coords((star.x, star.y), (width, height), &sim.sim_domain).unwrap_or_else(|| (2.0, 2.0));
+            let (screen_x, screen_y) = sim::point2d_to_screen_coords(star.position, (width, height), &sim.sim_domain).unwrap_or_else(|| (2.0, 2.0));
             let this_point = Vertex {position: [screen_x as f32, screen_y as f32]};
             point_positions.push(this_point);
         }
@@ -104,8 +106,8 @@ fn main() {
             },
             _ => glutin::event_loop::ControlFlow::Poll,
         };
-        if (frame_counter % 60) == 0 {
-            println!("({}, {})    average fps: {}", width, height, moving_fps);
+        if (frame_counter % 10) == 0 {
+            println!("resolution: ({}, {})    average fps: {}", width, height, moving_fps);
         }
     });
 }
