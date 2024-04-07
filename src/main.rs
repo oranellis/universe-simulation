@@ -70,7 +70,7 @@ fn main() {
 
         frame_counter += 1;
         for _ in 0..sim::FRAMESKIPS {
-            sim.step_rk4();
+            sim.step();
         }
         let mut target = display.draw();
         target.clear_color(0.0, 0.0, 0.0, 1.0);

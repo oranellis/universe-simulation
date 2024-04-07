@@ -4,7 +4,7 @@ use rand_distr::{Normal, Distribution};
 use nalgebra::{Vector2, vector};
 
 pub const STAR_COUNT: u64 = 10;
-pub const TIMESTEP: f64 = 1e12; // In seconds
+pub const TIMESTEP: f64 = 1e7; // In seconds
 pub const FRAMESKIPS: u32 = 1; // The number of timesteps to perform per frame
 pub const G: f64 = 6.674e-11; // In seconds
 
@@ -65,7 +65,6 @@ fn gravitational_force_components(m1: f64, m2: f64, pos1: SimVector, pos2: SimVe
     // Calculate the displacement vector between the two points
     let displacement: SimVector = pos2 - pos1;
     let r_squared = displacement.norm_squared();
-    let r = r_squared.sqrt();
 
     // Calculate the magnitude of the gravitational force
     let f = G * (m1 * m2) / r_squared;
@@ -167,6 +166,15 @@ impl Simulation2D {
             // Combining the results to compute the final position and velocity
             star.position += (k1_v + 2.0*k2_v + 2.0*k3_v + k4_v) * (TIMESTEP / 6.0);
             star.velocity += (k1_a + 2.0*k2_a + 2.0*k3_a + k4_a) * (TIMESTEP / 6.0);
+        }
+    }
+
+    pub fn step(&mut self) {
+        let old_stars = self.stars.clone();
+        for star in &mut self.stars {
+            let acceleration = total_gravitational_acceleration(star, &old_stars);
+            star.position = star.position + star.velocity*TIMESTEP + 0.5*acceleration*TIMESTEP*TIMESTEP;
+            star.velocity += acceleration * TIMESTEP;
         }
     }
 
